@@ -135,14 +135,23 @@ export async function addWordsToBank(words: { word: string; translation: string 
     throw new Error('فقط ادمین می‌تواند به بانک لغات اضافه کند');
   }
 
-  const wordsToAdd = words.map(w => ({
-    word: w.word,
-    translation: w.translation,
+  // Get all existing words in the bank
+  const existingWords = await db.wordBank.toArray();
+  const existingWordMap = new Map(existingWords.map(w => [w.word.toLowerCase(), w]));
+
+  // Filter out duplicates and prepare new words
+  const newWords = words.filter(w => !existingWordMap.has(w.word.toLowerCase())).map(w => ({
+    word: w.word.trim(),
+    translation: w.translation.trim(),
     createdAt: new Date(),
     addedBy: adminId
   }));
 
-  await db.wordBank.bulkAdd(wordsToAdd);
+  if (newWords.length > 0) {
+    await db.wordBank.bulkAdd(newWords);
+  }
+
+  return;
 }
 
 export async function getRandomWordsFromBank(count: number): Promise<WordBank[]> {
@@ -152,20 +161,34 @@ export async function getRandomWordsFromBank(count: number): Promise<WordBank[]>
 }
 
 export async function addWordsToUserList(userId: number, words: WordBank[], categoryId: number): Promise<void> {
-  const wordsToAdd = words.map(w => ({
-    userId,
-    categoryId,
-    word: w.word,
-    translation: w.translation,
-    usage: '',
-    createdAt: new Date(),
-    lastReview: null,
-    reviewCount: 0,
-    box: 1,
-    nextReview: new Date()
-  }));
+  // Check if any of these words already exist for the user
+  const existingWords = await db.words
+    .where('userId')
+    .equals(userId)
+    .and(word => word.categoryId === categoryId)
+    .toArray();
 
-  await db.words.bulkAdd(wordsToAdd);
+  const existingWordMap = new Map(existingWords.map(w => [w.word.toLowerCase(), w]));
+
+  // Filter out duplicates and prepare new words
+  const wordsToAdd = words
+    .filter(w => !existingWordMap.has(w.word.toLowerCase()))
+    .map(w => ({
+      userId,
+      categoryId,
+      word: w.word,
+      translation: w.translation,
+      usage: '',
+      createdAt: new Date(),
+      lastReview: null,
+      reviewCount: 0,
+      box: 1,
+      nextReview: new Date()
+    }));
+
+  if (wordsToAdd.length > 0) {
+    await db.words.bulkAdd(wordsToAdd);
+  }
 }
 
 // Category management
