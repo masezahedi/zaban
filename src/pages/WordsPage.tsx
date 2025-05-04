@@ -620,6 +620,106 @@ const WordsPage: React.FC = () => {
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Categories Section */}
+          <div className="lg:col-span-1">
+            <div className="card">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-bold text-gray-900">
+                  دسته‌بندی‌های من
+                </h2>
+                <button
+                  onClick={() => setIsAddingCategory(true)}
+                  className="btn-primary text-sm py-2 px-4"
+                >
+                  <PlusCircle className="w-5 h-5" />
+                </button>
+              </div>
+
+              {isAddingCategory && (
+                <div className="mb-4 p-4 bg-gray-50 rounded-lg">
+                  <input
+                    type="text"
+                    value={newCategoryTitle}
+                    onChange={(e) => setNewCategoryTitle(e.target.value)}
+                    placeholder="عنوان دسته‌بندی"
+                    className="form-input mb-2"
+                  />
+                  <div className="flex justify-end space-x-2 space-x-reverse">
+                    <button
+                      onClick={() => setIsAddingCategory(false)}
+                      className="btn-outline text-sm py-1 px-3"
+                    >
+                      انصراف
+                    </button>
+                    <button
+                      onClick={handleAddCategory}
+                      className="btn-primary text-sm py-1 px-3"
+                    >
+                      افزودن
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {editingCategory && (
+                <div className="mb-4 p-4 bg-gray-50 rounded-lg">
+                  <input
+                    type="text"
+                    value={newCategoryTitle}
+                    onChange={(e) => setNewCategoryTitle(e.target.value)}
+                    placeholder="عنوان دسته‌بندی"
+                    className="form-input mb-2"
+                  />
+                  <div className="flex justify-end space-x-2 space-x-reverse">
+                    <button
+                      onClick={() => {
+                        setEditingCategory(null);
+                        setNewCategoryTitle("");
+                      }}
+                      className="btn-outline text-sm py-1 px-3"
+                    >
+                      انصراف
+                    </button>
+                    <button
+                      onClick={handleUpdateCategory}
+                      className="btn-primary text-sm py-1 px-3"
+                    >
+                      ذخیره
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                {categories.map((category) => (
+                  <div
+                    key={category.id}
+                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                  >
+                    <span className="font-medium">{category.title}</span>
+                    <div className="flex items-center space-x-2 space-x-reverse">
+                      <button
+                        onClick={() => {
+                          setEditingCategory(category);
+                          setNewCategoryTitle(category.title);
+                        }}
+                        className="p-1 text-gray-600 hover:text-primary-600 transition-colors"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteCategory(category.id!)}
+                        className="p-1 text-gray-600 hover:text-red-600 transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
           {/* Words Section */}
           <div className="lg:col-span-2">
             <div className="card">
