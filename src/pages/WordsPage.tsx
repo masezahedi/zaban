@@ -3,20 +3,44 @@ import { motion } from 'framer-motion';
 import { PlusCircle, Pencil, Trash2, ChevronRight, ChevronLeft, ArrowRight, Upload, Database, Loader2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Category, Word, WordBank, getCategories, createCategory, updateCategory, deleteCategory, getWords, createWord, updateWord, deleteWord, addWordsToBank, getRandomWordsFromBank, addWordsToUserList } from '../db/db';
+import {
+  Category,
+  Word,
+  WordBank,
+  WordBankCategory,
+  getCategories,
+  createCategory,
+  updateCategory,
+  deleteCategory,
+  getWords,
+  createWord,
+  updateWord,
+  deleteWord,
+  addWordsToBank,
+  getRandomWordsFromBank,
+  addWordsToUserList,
+  createWordBankCategory,
+  updateWordBankCategory,
+  deleteWordBankCategory,
+  getWordBankCategories
+} from '../db/db';
 import toast from 'react-hot-toast';
 
 const WordsPage: React.FC = () => {
   const { user } = useAuth();
   const [categories, setCategories] = useState<Category[]>([]);
+  const [wordBankCategories, setWordBankCategories] = useState<WordBankCategory[]>([]);
   const [words, setWords] = useState<Word[]>([]);
   const [totalWords, setTotalWords] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [isAddingCategory, setIsAddingCategory] = useState(false);
+  const [isAddingWordBankCategory, setIsAddingWordBankCategory] = useState(false);
   const [isAddingWord, setIsAddingWord] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
+  const [editingWordBankCategory, setEditingWordBankCategory] = useState<WordBankCategory | null>(null);
   const [editingWord, setEditingWord] = useState<Word | null>(null);
   const [newCategoryTitle, setNewCategoryTitle] = useState('');
+  const [newWordBankCategoryTitle, setNewWordBankCategoryTitle] = useState('');
   const [newWord, setNewWord] = useState({
     word: '',
     translation: '',
@@ -25,12 +49,14 @@ const WordsPage: React.FC = () => {
   });
   const [showWordBank, setShowWordBank] = useState(false);
   const [randomWordCount, setRandomWordCount] = useState(5);
+  const [selectedWordBankCategory, setSelectedWordBankCategory] = useState<number>(0);
   const [randomWords, setRandomWords] = useState<WordBank[]>([]);
   const [selectedRandomWords, setSelectedRandomWords] = useState<Set<number>>(new Set());
   const [isLoadingRandom, setIsLoadingRandom] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [selectedUploadCategory, setSelectedUploadCategory] = useState<number>(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const ITEMS_PER_PAGE = 20;
@@ -44,8 +70,10 @@ const WordsPage: React.FC = () => {
   const loadData = async () => {
     try {
       const userCategories = await getCategories(user!.id);
+      const bankCategories = await getWordBankCategories();
       const { words: userWords, total } = await getWords(user!.id, currentPage, ITEMS_PER_PAGE);
       setCategories(userCategories);
+      setWordBankCategories(bankCategories);
       setWords(userWords);
       setTotalWords(total);
     } catch (error) {
@@ -68,6 +96,20 @@ const WordsPage: React.FC = () => {
     }
   };
 
+  const handleAddWordBankCategory = async () => {
+    if (!user?.id || !newWordBankCategoryTitle.trim()) return;
+    
+    try {
+      await createWordBankCategory(newWordBankCategoryTitle.trim(), user.id);
+      await loadData();
+      setNewWordBankCategoryTitle('');
+      setIsAddingWordBankCategory(false);
+      toast.success('دسته‌بندی بانک لغات با موفقیت اضافه شد');
+    } catch (error) {
+      toast.error('خطا در ایجاد دسته‌بندی بانک لغات');
+    }
+  };
+
   const handleUpdateCategory = async () => {
     if (!user?.id || !editingCategory) return;
     
@@ -79,6 +121,20 @@ const WordsPage: React.FC = () => {
       toast.success('دسته‌بندی با موفقیت ویرایش شد');
     } catch (error) {
       toast.error('خطا در ویرایش دسته‌بندی');
+    }
+  };
+
+  const handleUpdateWordBankCategory = async () => {
+    if (!user?.id || !editingWordBankCategory) return;
+    
+    try {
+      await updateWordBankCategory(editingWordBankCategory.id!, newWordBankCategoryTitle.trim(), user.id);
+      await loadData();
+      setEditingWordBankCategory(null);
+      setNewWordBankCategoryTitle('');
+      toast.success('دسته‌بندی بانک لغات با موفقیت ویرایش شد');
+    } catch (error) {
+      toast.error('خطا در ویرایش دسته‌بندی بانک لغات');
     }
   };
 
@@ -95,6 +151,22 @@ const WordsPage: React.FC = () => {
       toast.success('دسته‌بندی با موفقیت حذف شد');
     } catch (error) {
       toast.error('خطا در حذف دسته‌بندی');
+    }
+  };
+
+  const handleDeleteWordBankCategory = async (categoryId: number) => {
+    if (!user?.id) return;
+    
+    if (!confirm('آیا از حذف این دسته‌بندی بانک لغات اطمینان دارید؟ تمام لغات این دسته‌بندی نیز حذف خواهند شد.')) {
+      return;
+    }
+    
+    try {
+      await deleteWordBankCategory(categoryId, user.id);
+      await loadData();
+      toast.success('دسته‌بندی بانک لغات با موفقیت حذف شد');
+    } catch (error) {
+      toast.error('خطا در حذف دسته‌بندی بانک لغات');
     }
   };
 
@@ -169,7 +241,10 @@ const WordsPage: React.FC = () => {
   };
 
   const handleUploadWords = async () => {
-    if (!uploadedFile || !user?.id) return;
+    if (!uploadedFile || !user?.id || !selectedUploadCategory) {
+      toast.error('لطفاً یک دسته‌بندی انتخاب کنید');
+      return;
+    }
     
     setIsUploading(true);
     try {
@@ -195,14 +270,15 @@ const WordsPage: React.FC = () => {
       // تبدیل ساختار داده به فرمت مورد نیاز
       const formattedWords = words.map(item => ({
         word: item.word.trim(),
-        translation: item.translate.trim() // تغییر از translate به translation
+        translation: item.translate.trim()
       }));
 
-      await addWordsToBank(formattedWords, user.id);
+      await addWordsToBank(formattedWords, user.id, selectedUploadCategory);
       toast.success('لغات با موفقیت به بانک لغات اضافه شدند');
       
       // پاک کردن فایل
       setUploadedFile(null);
+      setSelectedUploadCategory(0);
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
@@ -219,7 +295,7 @@ const WordsPage: React.FC = () => {
     
     setIsLoadingRandom(true);
     try {
-      const words = await getRandomWordsFromBank(randomWordCount);
+      const words = await getRandomWordsFromBank(randomWordCount, selectedWordBankCategory || undefined);
       setRandomWords(words);
       setSelectedRandomWords(new Set(words.map(w => w.id!)));
     } catch (error) {
@@ -289,7 +365,105 @@ const WordsPage: React.FC = () => {
 
             {showAdminPanel && (
               <div className="card mb-8">
-                <h2 className="text-xl font-bold text-gray-900 mb-6">افزودن لغات به بانک لغات</h2>
+                <h2 className="text-xl font-bold text-gray-900 mb-6">مدیریت بانک لغات</h2>
+                
+                {/* Word Bank Categories Management */}
+                <div className="mb-8">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-bold text-gray-800">دسته‌بندی‌های بانک لغات</h3>
+                    <button
+                      onClick={() => setIsAddingWordBankCategory(true)}
+                      className="btn-primary text-sm py-2 px-4"
+                    >
+                      <PlusCircle className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  {isAddingWordBankCategory && (
+                    <div className="mb-4 p-4 bg-gray-50 rounded-lg">
+                      <input
+                        type="text"
+                        value={newWordBankCategoryTitle}
+                        onChange={(e) => setNewWordBankCategoryTitle(e.target.value)}
+                        placeholder="عنوان دسته‌بندی"
+                        className="form-input mb-2"
+                      />
+                      <div className="flex justify-end space-x-2 space-x-reverse">
+                        <button
+                          onClick={() => setIsAddingWordBankCategory(false)}
+                          className="btn-outline text-sm py-1 px-3"
+                        >
+                          انصراف
+                        </button>
+                        <button
+                          onClick={handleAddWordBankCategory}
+                          className="btn-primary text-sm py-1 px-3"
+                        >
+                          افزودن
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {editingWordBankCategory && (
+                    <div className="mb-4 p-4 bg-gray-50 rounded-lg">
+                      <input
+                        type="text"
+                        value={newWordBankCategoryTitle}
+                        onChange={(e) => setNewWordBankCategoryTitle(e.target.value)}
+                        placeholder="عنوان دسته‌بندی"
+                        className="form-input mb-2"
+                      />
+                      <div className="flex justify-end space-x-2 space-x-reverse">
+                        <button
+                          onClick={() => {
+                            setEditingWordBankCategory(null);
+                            setNewWordBankCategoryTitle('');
+                          }}
+                          className="btn-outline text-sm py-1 px-3"
+                        >
+                          انصراف
+                        </button>
+                        <button
+                          onClick={handleUpdateWordBankCategory}
+                          className="btn-primary text-sm py-1 px-3"
+                        >
+                          ذخیره
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    {wordBankCategories.map((category) => (
+                      <div
+                        key={category.id}
+                        className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                      >
+                        <span className="font-medium">{category.title}</span>
+                        <div className="flex items-center space-x-2 space-x-reverse">
+                          <button
+                            onClick={() => {
+                              setEditingWordBankCategory(category);
+                              setNewWordBankCategoryTitle(category.title);
+                            }}
+                            className="p-1 text-gray-600 hover:text-primary-600 transition-colors"
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteWordBankCategory(category.id!)}
+                            className="p-1 text-gray-600 hover:text-red-600 transition-colors"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Word Upload Section */}
                 <div className="space-y-6">
                   <div className="bg-blue-50 p-4 rounded-lg">
                     <h3 className="font-bold text-gray-800 mb-2">راهنمای آپلود فایل</h3>
@@ -304,7 +478,7 @@ const WordsPage: React.FC = () => {
                     </pre>
                   </div>
 
-                  <div className="border-2 border-dashed border-gray-200 rounded-lg p-6 text-center">
+                  <div className="border-2 border-dashed border-gray-200 rounded-lg p-6">
                     <input
                       type="file"
                       ref={fileInputRef}
@@ -315,24 +489,37 @@ const WordsPage: React.FC = () => {
                     
                     <div className="mb-4">
                       <Upload className="w-12 h-12 text-gray-400 mx-auto mb-2" />
-                      <p className="text-gray-600">فایل JSON خود را انتخاب کنید</p>
+                      <p className="text-gray-600 text-center">فایل JSON خود را انتخاب کنید</p>
                     </div>
 
-                    <button
-                      onClick={() => fileInputRef.current?.click()}
-                      className="btn-outline mb-2"
-                    >
-                      انتخاب فایل
-                    </button>
+                    <div className="mb-4">
+                      <label className="form-label">دسته‌بندی بانک لغات</label>
+                      <select
+                        value={selectedUploadCategory}
+                        onChange={(e) => setSelectedUploadCategory(Number(e.target.value))}
+                        className="form-input"
+                      >
+                        <option value={0}>انتخاب دسته‌بندی</option>
+                        {wordBankCategories.map((category) => (
+                          <option key={category.id} value={category.id}>
+                            {category.title}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
 
-                    {uploadedFile && (
-                      <div className="mt-4">
-                        <p className="text-sm text-gray-600 mb-2">
-                          فایل انتخاب شده: {uploadedFile.name}
-                        </p>
+                    <div className="flex justify-center space-x-2 space-x-reverse">
+                      <button
+                        onClick={() => fileInputRef.current?.click()}
+                        className="btn-outline"
+                      >
+                        انتخاب فایل
+                      </button>
+
+                      {uploadedFile && (
                         <button
                           onClick={handleUploadWords}
-                          disabled={isUploading}
+                          disabled={isUploading || !selectedUploadCategory}
                           className="btn-primary"
                         >
                           {isUploading ? (
@@ -344,7 +531,13 @@ const WordsPage: React.FC = () => {
                             'شروع آپلود'
                           )}
                         </button>
-                      </div>
+                      )}
+                    </div>
+
+                    {uploadedFile && (
+                      <p className="text-sm text-gray-600 text-center mt-4">
+                        فایل انتخاب شده: {uploadedFile.name}
+                      </p>
                     )}
                   </div>
                 </div>
@@ -358,7 +551,7 @@ const WordsPage: React.FC = () => {
           <div className="lg:col-span-1">
             <div className="card">
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-bold text-gray-900">دسته‌بندی‌ها</h2>
+                <h2 className="text-xl font-bold text-gray-900">دسته‌بندی‌های من</h2>
                 <button
                   onClick={() => setIsAddingCategory(true)}
                   className="btn-primary text-sm py-2 px-4"
@@ -491,14 +684,14 @@ const WordsPage: React.FC = () => {
                       />
                     </div>
                     <div>
-                      <label className="form-label">دسته‌بندی</label>
+                      <label className="form-label">دسته‌بندی بانک لغات</label>
                       <select
-                        value={newWord.categoryId}
-                        onChange={(e) => setNewWord({ ...newWord, categoryId: Number(e.target.value) })}
+                        value={selectedWordBankCategory}
+                        onChange={(e) => setSelectedWordBankCategory(Number(e.target.value))}
                         className="form-input"
                       >
-                        <option value={0}>انتخاب دسته‌بندی</option>
-                        {categories.map((category) => (
+                        <option value={0}>همه دسته‌بندی‌ها</option>
+                        {wordBankCategories.map((category) => (
                           <option key={category.id} value={category.id}>
                             {category.title}
                           </option>
@@ -545,6 +738,22 @@ const WordsPage: React.FC = () => {
                         ))}
                       </div>
 
+                      <div>
+                        <label className="form-label">افزودن به دسته‌بندی</label>
+                        <select
+                          value={newWord.categoryId}
+                          onChange={(e) => setNewWord({ ...newWord, categoryId: Number(e.target.value) })}
+                          className="form-input mb-4"
+                        >
+                          <option value={0}>انتخاب دسته‌بندی</option>
+                          {categories.map((category) => (
+                            <option key={category.id} value={category.id}>
+                              {category.title}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
                       <div className="flex justify-end space-x-2 space-x-reverse">
                         <button
                           onClick={() => {
@@ -558,7 +767,7 @@ const WordsPage: React.FC = () => {
                         </button>
                         <button
                           onClick={handleAddSelectedWords}
-                          disabled={selectedRandomWords.size === 0}
+                          disabled={selectedRandomWords.size === 0 || !newWord.categoryId}
                           className="btn-primary"
                         >
                           افزودن {selectedRandomWords.size} لغت

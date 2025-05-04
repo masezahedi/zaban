@@ -43,10 +43,18 @@ export interface Word {
   nextReview: Date | null;
 }
 
+export interface WordBankCategory {
+  id?: number;
+  title: string;
+  createdAt: Date;
+  addedBy: number; // userId of admin who added this
+}
+
 export interface WordBank {
   id?: number;
   word: string;
   translation: string;
+  categoryId: number; // Reference to WordBankCategory
   createdAt: Date;
   addedBy: number; // userId of admin who added this
 }
@@ -57,16 +65,18 @@ class AppDatabase extends Dexie {
   categories!: Table<Category>;
   words!: Table<Word>;
   wordBank!: Table<WordBank>;
+  wordBankCategories!: Table<WordBankCategory>;
 
   constructor() {
     super('languageLearningDb');
     
-    this.version(4).stores({
+    this.version(5).stores({
       users: '++id, username, email, isAdmin',
       progress: '++id, userId, language',
       categories: '++id, userId',
       words: '++id, userId, categoryId, word, box, nextReview',
-      wordBank: '++id, word'
+      wordBank: '++id, word, categoryId',
+      wordBankCategories: '++id, title'
     });
   }
 }
@@ -128,24 +138,78 @@ export async function loginUser(username: string, password: string): Promise<Use
   return user;
 }
 
+// Word Bank Category functions
+export async function createWordBankCategory(title: string, adminId: number): Promise<number> {
+  const admin = await db.users.get(adminId);
+  if (!admin?.isAdmin) {
+    throw new Error('فقط ادمین می‌تواند دسته‌بندی ایجاد کند');
+  }
+
+  return await db.wordBankCategories.add({
+    title,
+    createdAt: new Date(),
+    addedBy: adminId
+  });
+}
+
+export async function updateWordBankCategory(id: number, title: string, adminId: number): Promise<void> {
+  const admin = await db.users.get(adminId);
+  if (!admin?.isAdmin) {
+    throw new Error('فقط ادمین می‌تواند دسته‌بندی را ویرایش کند');
+  }
+
+  await db.wordBankCategories.update(id, { title });
+}
+
+export async function deleteWordBankCategory(id: number, adminId: number): Promise<void> {
+  const admin = await db.users.get(adminId);
+  if (!admin?.isAdmin) {
+    throw new Error('فقط ادمین می‌تواند دسته‌بندی را حذف کند');
+  }
+
+  await db.wordBankCategories.delete(id);
+  // Delete all words in this category from word bank
+  await db.wordBank.where('categoryId').equals(id).delete();
+}
+
+export async function getWordBankCategories(): Promise<WordBankCategory[]> {
+  return await db.wordBankCategories.toArray();
+}
+
 // Word Bank functions
-export async function addWordsToBank(words: { word: string; translation: string }[], adminId: number): Promise<void> {
+export async function addWordsToBank(
+  words: { word: string; translation: string }[],
+  adminId: number,
+  categoryId: number
+): Promise<void> {
   const admin = await db.users.get(adminId);
   if (!admin?.isAdmin) {
     throw new Error('فقط ادمین می‌تواند به بانک لغات اضافه کند');
   }
 
-  // Get all existing words in the bank
-  const existingWords = await db.wordBank.toArray();
+  // Verify category exists
+  const category = await db.wordBankCategories.get(categoryId);
+  if (!category) {
+    throw new Error('دسته‌بندی مورد نظر یافت نشد');
+  }
+
+  // Get all existing words in the bank for this category
+  const existingWords = await db.wordBank
+    .where('categoryId')
+    .equals(categoryId)
+    .toArray();
   const existingWordMap = new Map(existingWords.map(w => [w.word.toLowerCase(), w]));
 
   // Filter out duplicates and prepare new words
-  const newWords = words.filter(w => !existingWordMap.has(w.word.toLowerCase())).map(w => ({
-    word: w.word.trim(),
-    translation: w.translation.trim(),
-    createdAt: new Date(),
-    addedBy: adminId
-  }));
+  const newWords = words
+    .filter(w => !existingWordMap.has(w.word.toLowerCase()))
+    .map(w => ({
+      word: w.word.trim(),
+      translation: w.translation.trim(),
+      categoryId,
+      createdAt: new Date(),
+      addedBy: adminId
+    }));
 
   if (newWords.length > 0) {
     await db.wordBank.bulkAdd(newWords);
@@ -154,8 +218,14 @@ export async function addWordsToBank(words: { word: string; translation: string 
   return;
 }
 
-export async function getRandomWordsFromBank(count: number): Promise<WordBank[]> {
-  const allWords = await db.wordBank.toArray();
+export async function getRandomWordsFromBank(count: number, categoryId?: number): Promise<WordBank[]> {
+  let query = db.wordBank;
+  
+  if (categoryId) {
+    query = query.where('categoryId').equals(categoryId);
+  }
+  
+  const allWords = await query.toArray();
   const shuffled = allWords.sort(() => Math.random() - 0.5);
   return shuffled.slice(0, count);
 }
@@ -410,6 +480,22 @@ export async function initializeDb() {
       reviewCount: 0,
       box: 1,
       nextReview: new Date()
+    });
+
+    // Add sample word bank categories
+    const generalCategoryId = await db.wordBankCategories.add({
+      title: 'لغات عمومی',
+      createdAt: new Date(),
+      addedBy: adminId
+    });
+
+    // Add sample words to word bank
+    await db.wordBank.add({
+      word: 'Hello',
+      translation: 'سلام',
+      categoryId: generalCategoryId,
+      createdAt: new Date(),
+      addedBy: adminId
     });
   }
 }
